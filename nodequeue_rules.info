@@ -1,0 +1,6 @@
+name = Nodequeue Rules
+core = 7.x
+description = "Provides a basic rules integration for nodequeue."
+package = Nodequeue
+dependencies[] = nodequeue
+dependencies[] = rules
