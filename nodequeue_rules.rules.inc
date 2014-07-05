@@ -5,11 +5,14 @@
  * Rules integration for the nodequeue module.
  */
 
+
+/**
+  * Implements hook_rules_data_info().
+  */
 function nodequeue_rules_rules_data_info() {
-  dpm("test");
   $return = array(
-    'checkbox' => array(
-      'label' => t('checkbox'),
+    'checkboxes' => array(
+      'label' => t('checkboxes'),
       'ui class' => 'RulesDataUICheckboxes',
       'token type' => 'rules_text',
     )
@@ -138,7 +141,7 @@ function nodequeue_rules_rules_action_info() {
           'description' => t('The node you want to add.'),
         ),
         'queue' => array(
-          'type' => 'checkbox',
+          'type' => 'checkboxes',
           'label' => t('Queue'),
           'description' => t('The queue where the node should be added to.'),
           'options list' => 'nodequeue_rules_get_queue_names',
@@ -176,7 +179,13 @@ function nodequeue_rules_rules_action_info() {
  * Action: Add the given node to the given nodequeue.
  */
 function nodequeue_rules_action_add_node($node, $queue_name, $unique) {
-  $queue = nodequeue_load_queues(array($queue_name));
+
+  // Fix1: $queue_name to array
+  dpm($node);
+  dpm($queue_name);
+  dpm($unique);
+  $queue = nodequeue_load_queues($queue_name);
+  dpm($queue);
   $smartqueue_enabled = function_exists('smartqueue_taxonomy_nodequeue_subqueues') ? TRUE : FALSE;
   if ($smartqueue_enabled) {
     $references = smartqueue_taxonomy_nodequeue_subqueues($queue, $node);
@@ -188,6 +197,7 @@ function nodequeue_rules_action_add_node($node, $queue_name, $unique) {
     $node_domains = nodequeue_rules_get_node_domains($node);
   }
   $subqueues = nodequeue_load_subqueues_by_queue($queue_name);
+  dpm($subqueues);
   foreach($subqueues as $subqueue) {
     $add = TRUE;
     // unique means we don't add it if it's in the queue already
@@ -202,25 +212,25 @@ function nodequeue_rules_action_add_node($node, $queue_name, $unique) {
         if (!empty($subqueue->reference) && !empty($node_domains)){
           $reference_array = explode(':', $subqueue->reference);
           $queue_domain_id = end($reference_array);
-          dpm($queue);
-          dpm($subqueue);
+          //dpm($queue);
+          //dpm($subqueue);
           if(strpos($subqueue->reference, ':domain:') && in_array($queue_domain_id, $node_domains)) {
             // dsm('Adding ' . $node->title . ' to...' . $subqueue->reference); // Uncomment to debug with devel.
-            nodequeue_subqueue_add($queue, $subqueue, $node->nid);
+            nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
           }
         }
       }
       if ($smartqueue_enabled) {
-                  dpm($queue);
-          dpm($subqueue);
+                  //dpm($queue);
+          //dpm($subqueue);
         if (in_array($subqueue->reference, $references)) {
-          nodequeue_subqueue_add($queue, $subqueue, $node->nid);
+          nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
         }
       }
       if(!$smartqueue_domain_enabled && !$smartqueue_domain_enabled){
-                  dpm($queue);
+                  //dpm($queue);
           dpm($subqueue);
-        nodequeue_subqueue_add($queue, $subqueue, $node->nid);
+        nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
       }
     }
   }
