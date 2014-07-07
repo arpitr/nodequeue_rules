@@ -6,62 +6,14 @@
  * @see nodequeue_rules.rules.inc
  */
 
-/**
- * Event: Node added to a nodequeue.
- * Implements hook_nodequeue_add()
- */
-function nodequeue_rules_nodequeue_add($sqid, $nid) {
-  $subqueue = nodequeue_load_subqueue($sqid);
-  //dpm($subqueue);
-  //$queue = nodequeue_load($subqueue->qid);
-  $queue = $subqueue->name;
-  $node = node_load($nid);
-  rules_invoke_event('nodequeue_rules_event_add_node', $queue, $node);
-}
 
-/**
- * Event: Node removed from a nodequeue.
- * Implements hook_nodequeue_remove()
- */
-function nodequeue_rules_nodequeue_remove($sqid, $nid) {
-  $subqueue = nodequeue_load_subqueue($sqid);
-  $queue = nodequeue_load($subqueue->qid);
-  $node = node_load($nid);
-  rules_invoke_event('nodequeue_rules_event_remove_node', $queue, $node);
-}
-
-/**
- * Event: Nodes changed places in the nodequeue
- * Implements hook_nodequeue_swap()
- */
-function nodequeue_rules_nodequeue_save_subqueue_order_alter($sqid, $nids) {
-  $subqueue = nodequeue_load_subqueue($sqid);
-  $queue = nodequeue_load($subqueue->qid);
-  $nodes = array();
-  foreach ($nids as $data) {
-    $nodes[] = node_load($data['nid']);
-  }
-  rules_invoke_event('nodequeue_rules_event_save_subqueue_order_alter', $queue, $nodes);
-}
-
-/**
- * Add a node to a queue.
- *
- * @param $queue
- *   The parent queue of the subqueue. This is required so that we can
- *   pop nodes out if the queue breaks size limits.
- * @param $subqueue
- *   The subqueue to add the node to.
- * @param $nid
- *   The node ID. Defaults to NULL.
- */
-function nodequeue_rules_subqueue_add($queue, &$subqueue, $nid = NULL) {
+function nodequeue_subqueue_add_top($queue, &$subqueue, $nid = NULL) {
   if (!empty($nid)) {
     $transaction = db_transaction();
     try {
       $position = db_query("SELECT MAX(position) + 1 FROM (SELECT * FROM {nodequeue_nodes} WHERE sqid = :sqid) as nn", array(':sqid' => $subqueue->sqid))->fetchField();
-      //$position = !empty($position) ? $position : 1;
-      $position = 4;
+      $position = !empty($position) ? $position : 1;
+      //$position = 0;
       db_query("INSERT INTO {nodequeue_nodes} (sqid, name, nid, position, timestamp) VALUES (:sqid, :name, :nid, :position, :time)", array(':sqid' => $subqueue->sqid, ':name' => $queue->name, ':nid' => $nid, ':position' => $position,':time' => REQUEST_TIME));
     }
     catch (Exception $e) {
@@ -76,6 +28,14 @@ function nodequeue_rules_subqueue_add($queue, &$subqueue, $nid = NULL) {
     if (!empty($queue->size)) {
       // 0 means infinity so never do this if FALSE.
       nodequeue_check_subqueue_size($queue, $subqueue, $queue->size);
+    }
+
+    // Get position of current added node
+    $current_position = nodequeue_get_subqueue_position($subqueue->sqid, $nid);
+
+    // Move the current node to postion top
+    if($current_position != 1) {
+      nodequeue_queue_front($subqueue,$current_position);
     }
     if (module_exists('apachesolr')) {
       apachesolr_mark_entity('node', $nid);
