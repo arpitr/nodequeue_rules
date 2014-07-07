@@ -141,16 +141,6 @@ function nodequeue_rules_action_add_node($node_id, $queue_name, $unique) {
 
   $node = node_load($node_id); 
   $queue = nodequeue_load_queues($queue_name);
-  $smartqueue_enabled = function_exists('smartqueue_taxonomy_nodequeue_subqueues') ? TRUE : FALSE;
-  if ($smartqueue_enabled) {
-    $references = smartqueue_taxonomy_nodequeue_subqueues($queue, $node);
-  }
-
-  $smartqueue_domain_enabled = function_exists('smartqueue_domain_nodequeue_subqueues') ? TRUE : FALSE;
-  if ($smartqueue_domain_enabled) {
-    $subqueue_domain = smartqueue_domain_nodequeue_subqueues($queue, $node);
-    $node_domains = nodequeue_rules_get_node_domains($node);
-  }
   $subqueues = nodequeue_load_subqueues_by_queue($queue_name);
   foreach($subqueues as $subqueue) {
     $add = TRUE;
@@ -159,27 +149,10 @@ function nodequeue_rules_action_add_node($node_id, $queue_name, $unique) {
       $add = nodequeue_subqueue_position($subqueue->sqid, $node->nid) === FALSE;
     }
     if ($add) {
-      if ($smartqueue_domain_enabled) {
-        // Do not allow nodes to be added to queues on domains they are not publishted to.
-        // The domain id is the last part of the queue reference string.
-        // All smartqueue_domain subqueue references also contain ":domain:".
-        if (!empty($subqueue->reference) && !empty($node_domains)){
-          $reference_array = explode(':', $subqueue->reference);
-          $queue_domain_id = end($reference_array);
-          //dpm($queue);
-          //dpm($subqueue);
-          if(strpos($subqueue->reference, ':domain:') && in_array($queue_domain_id, $node_domains)) {
-            nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
-          }
-        }
-      }
-      if ($smartqueue_enabled) {
-        if (in_array($subqueue->reference, $references)) {
-          nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
-        }
-      }
-      if(!$smartqueue_domain_enabled && !$smartqueue_domain_enabled){
+      if(_nodequeue_rules_node_add_check($node,$queue[$subqueue->name])) {
         nodequeue_subqueue_add($queue[$subqueue->name], $subqueue, $node->nid);
+      }else {
+        watchdog('nodequeue_rules', 'BOTTOM Node with @nid can not be added to nodequeue @nodequeue.', array('@nid' => $node_id, '@nodequeue' => $queue[$subqueue->name]->title), WATCHDOG_NOTICE);
       }
     }
   }
@@ -191,16 +164,6 @@ function nodequeue_rules_action_add_node($node_id, $queue_name, $unique) {
 function nodequeue_rules_action_add_node_top($node_id, $queue_name, $unique) {
   $node = node_load($node_id);
   $queue = nodequeue_load_queues($queue_name);
-  $smartqueue_enabled = function_exists('smartqueue_taxonomy_nodequeue_subqueues') ? TRUE : FALSE;
-  if ($smartqueue_enabled) {
-    $references = smartqueue_taxonomy_nodequeue_subqueues($queue, $node);
-  }
-
-  $smartqueue_domain_enabled = function_exists('smartqueue_domain_nodequeue_subqueues') ? TRUE : FALSE;
-  if ($smartqueue_domain_enabled) {
-    $subqueue_domain = smartqueue_domain_nodequeue_subqueues($queue, $node);
-    $node_domains = nodequeue_rules_get_node_domains($node);
-  }
   $subqueues = nodequeue_load_subqueues_by_queue($queue_name);
   foreach($subqueues as $subqueue) {
     $add = TRUE;
@@ -209,30 +172,33 @@ function nodequeue_rules_action_add_node_top($node_id, $queue_name, $unique) {
       $add = nodequeue_subqueue_position($subqueue->sqid, $node->nid) === FALSE;
     }
     if ($add) {
-      if ($smartqueue_domain_enabled) {
-        // Do not allow nodes to be added to queues on domains they are not publishted to.
-        // The domain id is the last part of the queue reference string.
-        // All smartqueue_domain subqueue references also contain ":domain:".
-        if (!empty($subqueue->reference) && !empty($node_domains)){
-          $reference_array = explode(':', $subqueue->reference);
-          $queue_domain_id = end($reference_array);
-
-          if(strpos($subqueue->reference, ':domain:') && in_array($queue_domain_id, $node_domains)) {
-            nodequeue_subqueue_add_top($queue[$subqueue->name], $subqueue, $node->nid);
-          }
-        }
-      }
-      if ($smartqueue_enabled) {
-        if (in_array($subqueue->reference, $references)) {
-          // Check to use existing
-          nodequeue_subqueue_add_top($queue[$subqueue->name], $subqueue, $node->nid);
-        }
-      }
-      if(!$smartqueue_domain_enabled && !$smartqueue_domain_enabled){
+      if(_nodequeue_rules_node_add_check($node,$queue[$subqueue->name])) {
         nodequeue_subqueue_add_top($queue[$subqueue->name], $subqueue, $node->nid);
+      }else {
+        watchdog('nodequeue_rules', ' TOP Node with @nid can not be added to nodequeue @nodequeue.', array('@nid' => $node_id, '@nodequeue' => $queue[$subqueue->name]->title), WATCHDOG_NOTICE);
       }
     }
   }
+}
+
+/**
+  * Helper function to check if node can be added to nodequeue
+  * Check is on the basis of conten type.
+  */
+function _nodequeue_rules_node_add_check($node,$queue) {
+  $check = FALSE;
+  // Get node type.
+  $node_type = $node->type;
+
+  // Get nodequeue type.
+  $queue_type = $queue->types;
+
+  if(count($queue_type) == 0) {
+    $check = TRUE;
+  } elseif(in_array($node_type,$queue_type)) {
+    $check = TRUE;
+  }
+  return $check; 
 }
 
 
@@ -242,11 +208,17 @@ function nodequeue_rules_action_add_node_top($node_id, $queue_name, $unique) {
  */
 function nodequeue_rules_action_remove_node($node_id, $queue_name) {
   $node = node_load($node_id);
-  $queue = nodequeue_load_queues($queue_name);
-  $subqueues = nodequeue_load_subqueues_by_queue($queue_name);
-  foreach ($subqueues as $subqueue) {
-    if (!$queue[$subqueue->name]->i18n || (isset($node->tnid) && empty($node->tnid))) {
-      nodequeue_subqueue_remove_node($subqueue->sqid, $node->nid);
+  if(is_object($node) && isset($node->nid)) {
+    $queue = nodequeue_load_queues($queue_name);
+    $subqueues = nodequeue_load_subqueues_by_queue($queue_name);
+    foreach ($subqueues as $subqueue) {
+      if(nodequeue_subqueue_position($subqueue->sqid,$node_id)) {
+        if (!$queue[$subqueue->name]->i18n || (isset($node->tnid) && empty($node->tnid))) {
+          nodequeue_subqueue_remove_node($subqueue->sqid, $node->nid);
+        }
+      } else {
+        watchdog('nodequeue_rules', 'Node with @nid does not exist in nodequeue @nodequeue.', array('@nid' => $node_id, '@nodequeue' => $subqueue->name), WATCHDOG_NOTICE);
+      }
     }
   }
 }
